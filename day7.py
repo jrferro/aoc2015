@@ -11,7 +11,7 @@ class Wire:
     name: str
     value: int = 0
     ready: bool = False
-    outs: list["Gate"] = attrs.field(factory=list)
+    outs: list["Gate"] = attrs.field(factory=list, repr=False)
 
     def add_out(self, g):
         self.outs.append(g)
