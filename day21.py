@@ -1,68 +1,108 @@
 # https://adventofcode.com/2015/day/21
 
+from scipy.optimize import linprog
+import numpy as np
+
 BOSS_HP = 109
 BOSS_DAMAGE = 8
 BOSS_ARMOR = 2
 
 PLAYER_HP = 100
 
-# Weapons:    Cost  Damage  Armor
-# Dagger        8     4       0
-# Shortsword   10     5       0
-# Warhammer    25     6       0
-# Longsword    40     7       0
-# Greataxe     74     8       0
-# 
-# Armor:      Cost  Damage  Armor
-# Leather      13     0       1
-# Chainmail    31     0       2
-# Splintmail   53     0       3
-# Bandedmail   75     0       4
-# Platemail   102     0       5
-# 
-# Rings:      Cost  Damage  Armor
-# Damage +1    25     1       0
-# Damage +2    50     2       0
-# Damage +3   100     3       0
-# Defense +1   20     0       1
-# Defense +2   40     0       2
-# Defense +3   80     0       3
-
-WEAPON_ATK_COST = [999, 999, 999, 999, 8, 10, 25, 40, 74]
-RING_ATK_COST = [0, 25, 50, 75, 125, 150]
-ARMOR_DEF_COST = [0, 13, 31, 53, 75, 102]
-RING_DEF_COST = [0, 20, 40, 60, 100, 120]
+# Cost, Atk, Def, IsWeap, IsArm, IsRing
+EQUIPMENT = [[8, 4, 0, 1, 0, 0],
+             [10, 5, 0, 1, 0, 0],
+             [25, 6, 0, 1, 0, 0],
+             [40, 7, 0, 1, 0, 0],
+             [74, 8, 0, 1, 0, 0],
+             [13, 0, 1, 0, 1, 0],
+             [31, 0, 2, 0, 1, 0],
+             [53, 0, 3, 0, 1, 0],
+             [75, 0, 4, 0, 1, 0],
+             [102, 0, 5, 0, 1, 0],
+             [25, 1, 0, 0, 0, 1],
+             [50, 2, 0, 0, 0, 1],
+             [100, 3, 0, 0, 0, 1],
+             [20, 0, 1, 0, 0, 1],
+             [40, 0, 2, 0, 0, 1],
+             [80, 0, 3, 0, 0, 1]]
 
 def ttk(dmg, arm, hp):
     dpt = max(dmg-arm, 1)
-    if hp % dpt == 0:
-        return hp // dpt
-    else:
-        return (hp // dpt) + 1
+    return int(hp / dpt)
+    
+def eqpt_row(n):
+    return [v[n] for v in EQUIPMENT]
 
-def cost_of_atk(a, rank):
-    costs = []
-    for i, v in enumerate(RING_ATK_COST):
-        if a-i >= 4 and a-i <= 8:
-            costs.append(v + WEAPON_ATK_COST[a - i])
-    return rank(costs)
+def cost_to_win(turns):
+    costs = eqpt_row(0)
+    A_ub = []
+    b_ub = []
+    A_eq = []
+    b_eq = []
+    # At most one armor
+    A_ub += [eqpt_row(4)]
+    b_ub += [1]
+    # At most two rings
+    A_ub += [eqpt_row(5)]
+    b_ub += [2]
+    # Exactly one weapon
+    A_eq += [eqpt_row(3)]
+    b_eq += [1]
+    # Must be alive after n-1 boss strikes
+    A_ub += [[-(turns-1) * d for d in eqpt_row(2)]]
+    b_ub += [-(turns-1) * BOSS_DAMAGE + PLAYER_HP - 1]
+    # Must kill boss in n player strikes
+    A_ub += [[-turns * a for a in eqpt_row(1)]]
+    b_ub += [-turns * BOSS_ARMOR - BOSS_HP]
+    # Only one available of any item
+    bounds = [(0,1)] * len(EQUIPMENT)
+    result = linprog(np.array(costs),
+                     A_ub=np.array(A_ub),
+                     b_ub=np.array(b_ub),
+                     A_eq=np.array(A_eq),
+                     b_eq=np.array(b_eq),
+                     bounds=bounds,
+                     integrality=1)
+    return result.fun
 
-def cost_of_def(d, rank):
-    costs = []
-    for i, v in enumerate(RING_DEF_COST):
-        if d-i <= 5:
-            costs.append(v + ARMOR_DEF_COST[d - i])
-    return rank(costs)
+def cost_to_lose(turns):
+    costs = [-i for i in eqpt_row(0)]
+    A_ub = []
+    b_ub = []
+    A_eq = []
+    b_eq = []
+    # At most one armor
+    A_ub += [eqpt_row(4)]
+    b_ub += [1]
+    # At most two rings
+    A_ub += [eqpt_row(5)]
+    b_ub += [2]
+    # Exactly one weapon
+    A_eq += [eqpt_row(3)]
+    b_eq += [1]
+    # Must be dead after n boss strikes
+    A_ub += [[turns * d for d in eqpt_row(2)]]
+    b_ub += [turns * BOSS_DAMAGE - PLAYER_HP]
+    # Must not kill boss in n player strikes
+    A_ub += [[turns * a for a in eqpt_row(1)]]
+    b_ub += [turns * BOSS_ARMOR + BOSS_HP]
+    # Only one available of any item
+    bounds = [(0,1)] * len(EQUIPMENT)
+    result = linprog(np.array(costs),
+                     A_ub=np.array(A_ub),
+                     b_ub=np.array(b_ub),
+                     A_eq=np.array(A_eq),
+                     b_eq=np.array(b_eq),
+                     bounds=bounds,
+                     integrality=1)
+    return result.fun
 
 def main():
-    player_atk = 7
-    player_def = 4
-    print("TTK", ttk(player_atk, BOSS_ARMOR, BOSS_HP), "turns for", cost_of_atk(player_atk, min), "gold")
-    print("TTD", ttk(BOSS_DAMAGE, player_def, PLAYER_HP), "turns for", cost_of_def(player_def, min), "gold")
-    player_atk = 7
-    player_def = 3
-    print("TTK", ttk(player_atk, BOSS_ARMOR, BOSS_HP), "turns for", cost_of_atk(player_atk, max), "gold")
-    print("TTD", ttk(BOSS_DAMAGE, player_def, PLAYER_HP), "turns for", cost_of_def(player_def, max), "gold")
+    for i in range(10, 30):
+        print(f"It costs at least {cost_to_win(i)} to win in {i} turns")
+    for i in range(10, 30):
+        print(f"It costs at most {cost_to_lose(i)} to lose in {i} turns")
 
 if __name__ == "__main__":
     main()
